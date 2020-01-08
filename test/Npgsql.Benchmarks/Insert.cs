@@ -1,89 +1,155 @@
-﻿using System.Text;
+﻿using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
-using NpgsqlTypes;
 
 namespace Npgsql.Benchmarks
 {
     public class Insert
     {
-        NpgsqlConnection _conn = default!;
-        NpgsqlCommand _truncateCmd = default!;
-
-        [Params(1, 100, 1000, 10000)]
-        public int BatchSize { get; set; }
+        NpgsqlConnection _connection = default!;
 
         [GlobalSetup]
         public void GlobalSetup()
         {
-            var connString = new NpgsqlConnectionStringBuilder(BenchmarkEnvironment.ConnectionString)
-            {
-                Pooling = false
-            }.ToString();
-            _conn = new NpgsqlConnection(connString);
-            _conn.Open();
+            _connection = new NpgsqlConnection(
+                new NpgsqlConnectionStringBuilder(BenchmarkEnvironment.ConnectionString) { Pooling = false }.ToString());
+            _connection.Open();
 
-            using (var cmd = new NpgsqlCommand("CREATE TEMP TABLE data (int1 INT4, text1 TEXT, int2 INT4, text2 TEXT)", _conn))
-                cmd.ExecuteNonQuery();
-
-            _truncateCmd = new NpgsqlCommand("TRUNCATE data", _conn);
+            using var command = new NpgsqlCommand(connection: _connection, cmdText:
+                "CREATE TEMP TABLE data_table (id INTEGER NOT NULL, name TEXT NOT NULL) ON COMMIT DELETE ROWS");
+            command.ExecuteNonQuery();
         }
 
         [GlobalCleanup]
-        public void GlobalCleanup() => _conn.Close();
+        public void GlobalCleanup() => _connection.Close();
 
         [Benchmark(Baseline = true)]
-        public void Unbatched()
+        [ArgumentsSource(nameof(Source))]
+        public async Task InsertPlain(Data[] source)
         {
-            var cmd = new NpgsqlCommand("INSERT INTO data VALUES (@p0, @p1, @p2, @p3)", _conn);
-            cmd.Parameters.AddWithValue("p0", NpgsqlDbType.Integer, 8);
-            cmd.Parameters.AddWithValue("p1", NpgsqlDbType.Text, "foo");
-            cmd.Parameters.AddWithValue("p2", NpgsqlDbType.Integer, 9);
-            cmd.Parameters.AddWithValue("p3", NpgsqlDbType.Text, "bar");
-            cmd.Prepare();
+            var transaction = _connection.BeginTransaction();
+            using var command = new NpgsqlCommand(connection: _connection, cmdText:
+                "INSERT INTO data_table (id, name) VALUES (@i, @n)");
 
-            for (var i = 0; i < BatchSize; i++)
-                cmd.ExecuteNonQuery();
-            _truncateCmd.ExecuteNonQuery();
-        }
+            var id = new NpgsqlParameter<int>("i", default(int));
+            var name = new NpgsqlParameter<string>("n", string.Empty);
 
-        [Benchmark]
-        public void Batched()
-        {
-            var cmd = new NpgsqlCommand { Connection = _conn };
-            var sb = new StringBuilder();
-            for (var i = 0; i < BatchSize; i++)
+            command.Parameters.Add(id);
+            command.Parameters.Add(name);
+
+            foreach (var element in source)
             {
-                var p1 = (i * 4).ToString();
-                var p2 = (i * 4 + 1).ToString();
-                var p3 = (i * 4 + 2).ToString();
-                var p4 = (i * 4 + 3).ToString();
-                sb.Append("INSERT INTO data VALUES (@").Append(p1).Append(", @").Append(p2).Append(", @").Append(p3).Append(", @").Append(p4).Append(");");
-                cmd.Parameters.AddWithValue(p1, NpgsqlDbType.Integer, 8);
-                cmd.Parameters.AddWithValue(p2, NpgsqlDbType.Text, "foo");
-                cmd.Parameters.AddWithValue(p3, NpgsqlDbType.Integer, 9);
-                cmd.Parameters.AddWithValue(p4, NpgsqlDbType.Text, "bar");
+                id.TypedValue = element.Id;
+                name.TypedValue = element.Name;
+
+                await command.ExecuteNonQueryAsync();
             }
-            cmd.CommandText = sb.ToString();
-            cmd.Prepare();
-            cmd.ExecuteNonQuery();
-            _truncateCmd.ExecuteNonQuery();
+
+            await transaction.CommitAsync();
         }
 
         [Benchmark]
-        public void Copy()
+        [ArgumentsSource(nameof(Source))]
+        public async Task InsertPrepared(Data[] source)
         {
-            using (var s = _conn.BeginBinaryImport("COPY data (int1, text1, int2, text2) FROM STDIN BINARY"))
+            var transaction = _connection.BeginTransaction();
+            using var command = new NpgsqlCommand(connection: _connection, cmdText:
+                "INSERT INTO data_table (id, name) VALUES (@i, @n)");
+
+            await command.PrepareAsync();
+
+            var id = new NpgsqlParameter<int>("i", default(int));
+            var name = new NpgsqlParameter<string>("n", string.Empty);
+
+            command.Parameters.Add(id);
+            command.Parameters.Add(name);
+
+            foreach (var element in source)
             {
-                for (var i = 0; i < BatchSize; i++)
+                id.TypedValue = element.Id;
+                name.TypedValue = element.Name;
+
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await transaction.CommitAsync();
+        }
+
+        [Benchmark]
+        [ArgumentsSource(nameof(Source))]
+        public async Task InsertBatched(Data[] source)
+        {
+            using var command = new NpgsqlCommand(connection: _connection, cmdText: null);
+
+            var sb = new StringBuilder("INSERT INTO data_table (id, name) VALUES ");
+            for (var i = 0; i < source.Length; i++)
+            {
+                var pI = (i * 4).ToString();
+                var pN = (i * 4 + 1).ToString();
+
+                sb.Append("(@").Append(pI).Append(", @").Append(pN).Append(")");
+                command.Parameters.Add(new NpgsqlParameter<int>(pI, source[i].Id));
+                command.Parameters.Add(new NpgsqlParameter<int>(pN, source[i].Id));
+            }
+
+            await command.ExecuteNonQueryAsync();
+        }
+
+        [Benchmark]
+        [ArgumentsSource(nameof(Source))]
+        public async Task InsertUnnest(Data[] source)
+        {
+            using var command = new NpgsqlCommand(connection: _connection, cmdText:
+                "INSERT INTO data_table (id, name) SELECT * FROM unnest(@i, @n) AS d");
+
+            var id = new NpgsqlParameter<int[]>("i", source.Select(e => e.Id).ToArray());
+            var name = new NpgsqlParameter<string[]>("n", source.Select(e => e.Name).ToArray());
+
+            command.Parameters.Add(id);
+            command.Parameters.Add(name);
+
+            await command.ExecuteNonQueryAsync();
+        }
+
+        [Benchmark]
+        [ArgumentsSource(nameof(Source))]
+        public async Task Copy(Data[] source)
+        {
+            using var importer = _connection.BeginBinaryImport(
+                "COPY data_table (id, name) FROM STDIN (FORMAT binary)");
+    
+            foreach (var element in source)
+            {
+                await importer.StartRowAsync();
+                await importer.WriteAsync(element.Id);
+                await importer.WriteAsync(element.Name);
+            }
+
+            await importer.CompleteAsync();
+        }
+
+        public static IEnumerable<object[]> Source()
+        {
+            for (int power = 1, count = 2; power < 6; power++)
+            {
+                yield return new object[]
                 {
-                    s.StartRow();
-                    s.Write(8);
-                    s.Write("foo");
-                    s.Write(9);
-                    s.Write("bar");
-                }
+                    Enumerable
+                        .Range(0, count)
+                        .Select(i => new Data { Id = i, Name = $"My identifier is {i}" })
+                        .ToArray()
+                };
+
+                count *= 10;
             }
-            _truncateCmd.ExecuteNonQuery();
+        }
+
+        public class Data
+        {
+            public int Id { get; set; }
+            public string Name { get; set; } = string.Empty;
         }
     }
 }
