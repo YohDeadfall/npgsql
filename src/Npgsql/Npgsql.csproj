@@ -23,4 +23,7 @@
   <ItemGroup Condition=" '$(TargetFramework)' == 'net461' OR '$(TargetFramework)' == 'netstandard2.0' OR '$(TargetFramework)' == 'netstandard2.1' ">
     <PackageReference Include="System.Text.Json" Version="4.6.0" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="TypeHandlers\Range\" />
+  </ItemGroup>
 </Project>
