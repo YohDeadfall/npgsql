@@ -1,41 +1,17 @@
-﻿using Npgsql.BackendMessages;
-using Npgsql.TypeHandling;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading.Tasks;
+using Npgsql.TypeHandling;
 
-namespace Npgsql.TypeHandlers.Base
+namespace Npgsql.TypeHandlers.Base.Numeric
 {
-    internal sealed class NumericHandler<T, TConverter> : NpgsqlTypeHandler<T>
-        where TConverter : INpgsqlValueConverter<decimal, T>, new()
-    {
-        public NumericHandler() : base(NumericHandler.HeaderSize) { }
-
-        protected override async ValueTask<T> ReadValueAsync(NpgsqlReadBuffer buffer, FieldDescription? fieldDescription, int length) =>
-            new TConverter().ToTarget(await NumericHandler.ReadValue(buffer));
-
-        protected override ValueTask WriteValueAsync(T value, NpgsqlWriteBuffer buffer, NpgsqlParameter parameter, NpgsqlLengthCache lengthCache)
-        {
-            throw new NotImplementedException();
-        }
-
-        protected override int ValidateAndGetLength(T value, NpgsqlParameter parameter, NpgsqlLengthCache lengthCache)
-        {
-            throw new NotImplementedException();
-        }
-    }
-
     internal static class NumericHandler
     {
         public const int HeaderSize = sizeof(short) * 4;
 
         private const int MaxDecimalScale = 28;
 
-        private const int SignPositive = 0x0000;
         private const int SignNegative = 0x4000;
         private const int SignNan = 0xC000;
 

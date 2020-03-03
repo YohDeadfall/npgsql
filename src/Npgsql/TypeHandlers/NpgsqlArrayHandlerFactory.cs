@@ -10,6 +10,6 @@ namespace Npgsql.TypeHandlers
         private static NpgsqlTypeHandler GetElementHandler() =>
             throw new NotImplementedException();
 
-        protected internal abstract NpgsqlTypeHandler CreateHandler<TElement>(NpgsqlTypeHandler elementHandler);
+        protected internal abstract NpgsqlTypeHandler CreateHandler<TElement>(NpgsqlTypeHandler<TElement> elementHandler);
     }
 }

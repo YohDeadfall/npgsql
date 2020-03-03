@@ -2,17 +2,17 @@
 using System;
 using System.Threading.Tasks;
 
-namespace Npgsql.TypeHandlers.ArrayHandlers
+namespace Npgsql.TypeHandlers.Array
 {
     internal sealed class ArrayHandler<TElement> : NpgsqlTypeHandler
     {
         private static readonly bool HandlesNulls = default(TElement) is null;
-        private readonly NpgsqlTypeHandler _elementHandler;
+        private readonly NpgsqlTypeHandler<TElement> _elementHandler;
 
-        public ArrayHandler(NpgsqlTypeHandler elementHandler) =>
+        public ArrayHandler(NpgsqlTypeHandler<TElement> elementHandler) =>
             _elementHandler = elementHandler;
 
-        public override async ValueTask<TAny> ReadAsync<TAny>(NpgsqlReadBuffer buffer, FieldDescription? fieldDescription = null)
+        public override async ValueTask<TAny> Read<TAny>(NpgsqlReadBuffer buffer, FieldDescription? fieldDescription = null)
         {
             await buffer.Ensure(12, true);
             var dimensionCount = buffer.ReadInt32();
@@ -37,7 +37,7 @@ namespace Npgsql.TypeHandlers.ArrayHandlers
 
                 var oneDimensional = new TElement[arrayLength];
                 for (var i = 0; i < oneDimensional.Length; i++)
-                    oneDimensional[i] = await _elementHandler.ReadAsync<TElement>(buffer);
+                    oneDimensional[i] = await _elementHandler.Read<TElement>(buffer);
 
                 return (TAny)(object)oneDimensional;
             }
@@ -58,7 +58,7 @@ namespace Npgsql.TypeHandlers.ArrayHandlers
             var indices = new int[dimensionCount];
             while (true)
             {
-                var element = await _elementHandler.ReadAsync<TElement>(buffer);
+                var element = await _elementHandler.Read<TElement>(buffer);
                 result.SetValue(element, indices);
 
                 // TODO: Overly complicated/inefficient...
@@ -84,11 +84,5 @@ namespace Npgsql.TypeHandlers.ArrayHandlers
 
         internal override NpgsqlTypeHandler CreateRangeHandler(NpgsqlRangeHandlerFactory factory) =>
             throw new NotSupportedException();
-    }
-
-    internal sealed class ArrayHandlerFactory : NpgsqlArrayHandlerFactory
-    {
-        protected internal override NpgsqlTypeHandler CreateHandler<TElement>(NpgsqlTypeHandler elementHandler) =>
-            new ArrayHandler<TElement>(elementHandler);
     }
 }

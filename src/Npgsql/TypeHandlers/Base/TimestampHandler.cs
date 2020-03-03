@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Npgsql.TypeHandlers.Base
 {
-    internal sealed class TextHandler : NpgsqlTypeHandler<string>
+    class TimestampHandler
     {
     }
 }
