@@ -4,7 +4,7 @@
     <Copyright>Copyright 2020 © The Npgsql Development Team</Copyright>
     <Company>Npgsql</Company>
     <VersionPrefix>5.0.0</VersionPrefix>
-    <NoWarn>$(NoWarn);NU5105</NoWarn>
+    <NoWarn>$(NoWarn);NU5105;CS1591;IDE0049</NoWarn>
     <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
 
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
